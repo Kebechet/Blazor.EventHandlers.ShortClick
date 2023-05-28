@@ -6,6 +6,30 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+	<PropertyGroup Label="NugetProperties">
+		<IsPackable>true</IsPackable>
+		<PackageId>Kebechet.Blazor.EventHandlers.ShortClick</PackageId>
+		<Description>Contains @onshortclick blazor event handler</Description>
+		<RepositoryUrl>https://github.com/Kebechet/Blazor.EventHandlers.ShortClick</RepositoryUrl>
+		<PackageProjectUrl>https://github.com/Kebechet/Blazor.EventHandlers.ShortClick</PackageProjectUrl>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseFile>LICENSE</PackageLicenseFile>
+		<RepositoryType>git</RepositoryType>
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<Version>1.0.0-preview1</Version>
+		<PackageReleaseNotes>First release of the package</PackageReleaseNotes>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="..\..\LICENSE">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+		<None Include="..\..\README.md">
+			<Pack>True</Pack>
+			<PackagePath>\</PackagePath>
+		</None>
+	</ItemGroup>
 
   <ItemGroup>
     <SupportedPlatform Include="browser" />
