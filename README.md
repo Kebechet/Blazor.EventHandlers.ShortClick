@@ -13,5 +13,10 @@ or the combination with `@onlongpress`:
 <button @onlongpress="OnLongPress" @onshortclick="OnShortClick">Click or longpress me</button>
 ```
 
+# TODO
+- minification
+- build and publish pipeline
+- tests
+
 # License
 This repository is licensed with the [MIT](LICENSE.txt) license.
