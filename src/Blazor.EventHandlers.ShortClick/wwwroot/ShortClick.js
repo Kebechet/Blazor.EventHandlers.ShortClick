@@ -6,12 +6,19 @@
  */
 
 let startTime, endTime;
-var LONG_PRESS_TIMEOUT = 400;
+let startPos = null;
+
+//is same as Android DEFAULT_LONG_PRESS_TIMEOUT
+const LONG_PRESS_TIMEOUT = 400;
+
+//is same as Android TOUCH_SLOP
+const MOVE_THRESHOLD = 8;
 
 // Define a function to handle the "down" event
 function handleDown(e) {
     // Record the time at the start of the event
     startTime = new Date();
+    startPos = { x: e.screenX, y: e.screenY };
 }
 
 // Define a function to handle the "up" event
@@ -22,9 +29,19 @@ function handleUp(e) {
     let timeDiff = endTime - startTime; // in ms
 
     // If the time difference is less than 400 ms, trigger your custom event
-    if (timeDiff < LONG_PRESS_TIMEOUT) {
-        triggerEvent(e);
+    if (timeDiff >= LONG_PRESS_TIMEOUT) {
+        return;
     }
+
+    // Calculate the distance moved - euclidean distance
+    let dx = e.screenX - startPos.x;
+    let dy = e.screenY - startPos.y;
+    let distanceMoved = Math.sqrt(dx * dx + dy * dy);
+    if (distanceMoved >= MOVE_THRESHOLD) {
+        return;
+    }
+
+    triggerEvent(e);
 }
 
 // Define the custom event you want to trigger
@@ -55,10 +72,6 @@ function triggerEvent(event) {
     });
 
     event.target.dispatchEvent(shortclickEvent);
-    //document.getElementById('tstbutton').dispatchEvent(shortclickEvent);
-
-    // Dispatch the custom event
-    //window.dispatchEvent(shortclickEvent);
 }
 
 // Attach the event listeners for various event types
