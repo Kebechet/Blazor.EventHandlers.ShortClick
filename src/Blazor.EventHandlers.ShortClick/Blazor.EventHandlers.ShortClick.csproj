@@ -16,8 +16,8 @@
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 		<RepositoryType>git</RepositoryType>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-		<Version>1.0.1</Version>
-		<PackageReleaseNotes>First release of the package</PackageReleaseNotes>
+		<Version>1.0.2</Version>
+		<PackageReleaseNotes>Adjusted to DIPs (Distance Independant Pixels)</PackageReleaseNotes>
 	</PropertyGroup>
 
 	<ItemGroup>

@@ -11,8 +11,11 @@ let startPos = null;
 //is same as Android DEFAULT_LONG_PRESS_TIMEOUT
 const LONG_PRESS_TIMEOUT = 400;
 
-//is same as Android TOUCH_SLOP
+//is same as Android TOUCH_SLOP and the unit is in DIPs
 const MOVE_THRESHOLD = 8;
+
+// Get the device pixel ratio
+const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
 
 // Define a function to handle the "down" event
 function handleDown(e) {
@@ -36,8 +39,10 @@ function handleUp(e) {
     // Calculate the distance moved - euclidean distance
     let dx = e.screenX - startPos.x;
     let dy = e.screenY - startPos.y;
-    let distanceMoved = Math.sqrt(dx * dx + dy * dy);
-    if (distanceMoved >= MOVE_THRESHOLD) {
+    let distanceMovedInPixels = Math.sqrt(dx * dx + dy * dy);
+    let distanceMovedInDips = Math.round(distanceMovedInPixels / DEVICE_PIXEL_RATIO);
+
+    if (distanceMovedInDips > MOVE_THRESHOLD) {
         return;
     }
 
