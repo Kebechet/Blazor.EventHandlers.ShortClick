@@ -2,7 +2,7 @@
     console.log("Injecting ShortClick.js");
 
     var element = document.createElement('script');
-    element.src = "_content/Blazor.EventHandlers.ShortClick/ShortClick.js";
+    element.src = "_content/Kebechet.Blazor.EventHandlers.ShortClick/ShortClick.js";
     element.async = true;
     document.body.appendChild(element);
 }
