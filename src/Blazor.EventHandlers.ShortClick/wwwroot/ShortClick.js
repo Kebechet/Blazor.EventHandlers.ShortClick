@@ -26,6 +26,15 @@ function handleDown(e) {
 
 // Define a function to handle the "up" event
 function handleUp(e) {
+    // If no corresponding down event was recorded, ignore this up event
+    if (startPos === null || startTime === undefined) {
+        return;
+    }
+
+    // Capture and reset startPos so stale state doesn't carry over to the next event
+    const capturedStartPos = startPos;
+    startPos = null;
+
     // Record the time at the end of the event
     endTime = new Date();
     // Calculate the difference between start and end times
@@ -37,8 +46,8 @@ function handleUp(e) {
     }
 
     // Calculate the distance moved - euclidean distance
-    let dx = e.screenX - startPos.x;
-    let dy = e.screenY - startPos.y;
+    let dx = e.screenX - capturedStartPos.x;
+    let dy = e.screenY - capturedStartPos.y;
     let distanceMovedInPixels = Math.sqrt(dx * dx + dy * dy);
     let distanceMovedInDips = Math.round(distanceMovedInPixels / DEVICE_PIXEL_RATIO);
 
