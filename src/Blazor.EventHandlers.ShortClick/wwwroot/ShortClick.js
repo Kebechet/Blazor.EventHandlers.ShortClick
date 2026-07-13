@@ -107,8 +107,19 @@ function triggerEvent(event) {
  * (Mouse input does not show this: `click` is fired on the nearest common ancestor of mousedown and
  * mouseup, so an element that has been removed simply yields no click.)
  *
- * So: swallow the click that trails a shortclick, but ONLY when the pressed element is gone. A click on
- * an element that is still there is genuine, and must keep reaching submit / href / the framework.
+ * A ghost click takes two shapes, and both mean the same thing - the click did not land on what was
+ * pressed:
+ *
+ *   1. The pressed element was REMOVED, and the click lands on whatever replaced it
+ *      (an "Edit" button that swaps itself for "Cancel" + "Save").
+ *   2. The pressed element is still in the DOM but is no longer hit-testable - it was moved, covered, or
+ *      turned `pointer-events: none` (e.g. an overlay animating out). The click then hit-tests straight
+ *      through to whatever sits behind it.
+ *
+ * So the test is not "was the element removed" but "did the click land on what was pressed". A click on
+ * the pressed element (or on an ancestor/descendant of it, which is what the browser targets when you
+ * press a child and release on its parent) is genuine, and must keep reaching submit / href / the
+ * framework.
  *
  * `target.isConnected` cannot be checked straight after dispatchEvent - the handler may be async and its
  * render batch may not have been applied yet. The check has to happen when the click actually arrives.
@@ -124,7 +135,13 @@ function guardAgainstGhostClick(target) {
     const swallow = (clickEvent) => {
         disarm();
 
-        if (target.isConnected) {
+        const clickTarget = clickEvent.target;
+        const landedOnPressedElement =
+            target === clickTarget ||
+            target.contains(clickTarget) ||
+            clickTarget.contains(target);
+
+        if (target.isConnected && landedOnPressedElement) {
             return;
         }
 
