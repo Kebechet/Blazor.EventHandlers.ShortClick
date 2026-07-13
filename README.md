@@ -13,6 +13,22 @@ or the combination with `@onlongpress`:
 <button @onlongpress="OnLongPress" @onshortclick="OnShortClick">Click or longpress me</button>
 ```
 
+## Ghost clicks (behaviour change in 3.0.0)
+
+`shortclick` is dispatched on `pointerup`, which is **before** the browser dispatches the compatibility `click` for the same gesture. A handler is therefore free to re-render the DOM in between, and Blazor applies its render batch synchronously.
+
+On touch, that compatibility click is hit-tested against the DOM **as it stands when it is dispatched**. So if your handler removed the element that was pressed, the click lands on whatever now occupies that point. When the replacement is a `<button type="submit">` or an `<a href>`, it activates through the browser's native default action - no handler involved, nothing you can intercept from C#.
+
+A concrete case: an "Edit" button that swaps itself for "Cancel" + "Save". Tapping the right half of "Edit" enables edit mode **and** submits the form, because "Save" lands under the finger before the click is dispatched.
+
+(This never shows up with a mouse: `click` is fired on the nearest common ancestor of `mousedown` and `mouseup`, so a removed element simply yields no click. It only reproduces on touch - use device emulation, e.g. iPhone SE.)
+
+Since 3.0.0 the library swallows that click, but **only when the pressed element has actually been removed from the DOM**. A click on an element that is still there is genuine and keeps reaching `submit` / `href` / your handler as before. The guard is armed only for the ~350ms following a shortclick and disarms itself if no click arrives, so it can never swallow an unrelated later tap.
+
+**This is a breaking change** if you were (knowingly or not) depending on that trailing click firing.
+
+Note that `shortclick` never fires for keyboard activation - Enter/Space produce a `click` with no pointer events. If an element must be operable by keyboard, keep a plain `@onclick` on it.
+
 # TODO
 - minification
 - build and publish pipeline

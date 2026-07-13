@@ -14,6 +14,10 @@ const LONG_PRESS_TIMEOUT = 400;
 //is same as Android TOUCH_SLOP and the unit is in DIPs
 const MOVE_THRESHOLD = 8;
 
+// How long after a shortclick a compatibility click is still considered part of the same gesture.
+// Past this the guard disarms, so it can never swallow an unrelated later click.
+const COMPATIBILITY_CLICK_WINDOW = 350;
+
 // Get the device pixel ratio
 const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
 
@@ -86,6 +90,55 @@ function triggerEvent(event) {
     });
 
     event.target.dispatchEvent(shortclickEvent);
+
+    guardAgainstGhostClick(event.target);
+}
+
+/*
+ * `shortclick` is dispatched on pointerup, which is BEFORE the browser dispatches the compatibility
+ * `click` for the same gesture. A handler is therefore free to re-render the DOM in between - and Blazor
+ * applies its render batch synchronously.
+ *
+ * On touch, the compatibility click is hit-tested against the DOM as it stands when it is dispatched, so
+ * it lands on whatever now occupies that point - not on the element that was actually pressed. If the
+ * replacement happens to be a <button type="submit"> or an <a href>, it activates through the browser's
+ * native default action, with no handler involved at all. That is a "ghost click".
+ *
+ * (Mouse input does not show this: `click` is fired on the nearest common ancestor of mousedown and
+ * mouseup, so an element that has been removed simply yields no click.)
+ *
+ * So: swallow the click that trails a shortclick, but ONLY when the pressed element is gone. A click on
+ * an element that is still there is genuine, and must keep reaching submit / href / the framework.
+ *
+ * `target.isConnected` cannot be checked straight after dispatchEvent - the handler may be async and its
+ * render batch may not have been applied yet. The check has to happen when the click actually arrives.
+ */
+function guardAgainstGhostClick(target) {
+    let disarmTimer;
+
+    const disarm = () => {
+        clearTimeout(disarmTimer);
+        window.removeEventListener('click', swallow, true);
+    };
+
+    const swallow = (clickEvent) => {
+        disarm();
+
+        if (target.isConnected) {
+            return;
+        }
+
+        clickEvent.preventDefault();
+        clickEvent.stopImmediatePropagation();
+    };
+
+    // Some touch browsers emit no compatibility click at all. Disarm on a timer so a listener can never
+    // linger and swallow the user's next, unrelated tap.
+    disarmTimer = setTimeout(disarm, COMPATIBILITY_CLICK_WINDOW);
+
+    // Capture phase: this has to run before the framework's delegated listener and before the browser
+    // performs the click's default action.
+    window.addEventListener('click', swallow, true);
 }
 
 // Attach the event listeners for various event types

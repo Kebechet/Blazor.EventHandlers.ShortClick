@@ -16,8 +16,8 @@
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 		<RepositoryType>git</RepositoryType>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-		<Version>2.0.0</Version>
-		<PackageReleaseNotes>.NET8 bump</PackageReleaseNotes>
+		<Version>3.0.0</Version>
+		<PackageReleaseNotes>BREAKING: the compatibility click that follows a shortclick is now swallowed when the pressed element was removed from the DOM by the handler ("ghost click"). Previously that click was delivered to whatever element had replaced it, silently activating submit buttons and links.</PackageReleaseNotes>
 	</PropertyGroup>
 
 	<ItemGroup>
