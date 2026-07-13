@@ -23,7 +23,7 @@ A concrete case: an "Edit" button that swaps itself for "Cancel" + "Save". Tappi
 
 (This never shows up with a mouse: `click` is fired on the nearest common ancestor of `mousedown` and `mouseup`, so a removed element simply yields no click. It only reproduces on touch - use device emulation, e.g. iPhone SE.)
 
-Since 3.0.0 the library swallows that click, but **only when the pressed element has actually been removed from the DOM**. A click on an element that is still there is genuine and keeps reaching `submit` / `href` / your handler as before. The guard is armed only for the ~350ms following a shortclick and disarms itself if no click arrives, so it can never swallow an unrelated later tap.
+Since 3.0.0 the library swallows that click, but **only when it did not land on the element that was pressed** (or an ancestor/descendant of it). That covers both ghost shapes: the pressed element was removed and the click lands on its replacement, or the pressed element is still in the DOM but no longer hit-testable (moved, covered, `pointer-events: none`) and the click falls through to whatever is behind it. A click that lands on the pressed element is genuine and keeps reaching `submit` / `href` / your handler as before. Keyboard and programmatic clicks (`detail === 0`) are never swallowed. The guard is armed only for the ~350ms following a shortclick and disarms itself if no click arrives, so it can never swallow an unrelated later tap.
 
 **This is a breaking change** if you were (knowingly or not) depending on that trailing click firing.
 

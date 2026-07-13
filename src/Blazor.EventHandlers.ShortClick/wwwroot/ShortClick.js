@@ -168,6 +168,14 @@ function guardAgainstGhostClick(pressedElement) {
     };
 
     const swallow = (clickEvent) => {
+        // Keyboard activation and element.click() carry detail === 0; a compatibility click for a real
+        // tap never does. Those are not the click this guard exists for - let them pass, and stay armed:
+        // a programmatic click can arrive BEFORE the compatibility click, and disarming here would let
+        // the actual ghost through behind it.
+        if (clickEvent.detail === 0) {
+            return;
+        }
+
         disarm();
 
         const clickTarget = clickEvent.target;
