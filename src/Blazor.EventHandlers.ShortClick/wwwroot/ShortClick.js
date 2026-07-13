@@ -18,6 +18,12 @@ const MOVE_THRESHOLD = 8;
 // Past this the guard disarms, so it can never swallow an unrelated later click.
 const COMPATIBILITY_CLICK_WINDOW = 350;
 
+// The elements whose native default action a click would trigger. See getPressedElement.
+const INTERACTIVE_SELECTOR = 'a[href], button, input, select, textarea, label, summary, [role="button"]';
+
+// Only one ghost-click guard may be armed at a time. See guardAgainstGhostClick.
+let disarmActiveGuard = null;
+
 // Get the device pixel ratio
 const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
 
@@ -89,9 +95,31 @@ function triggerEvent(event) {
         }
     });
 
+    // Resolve the anchor BEFORE dispatching: the handler runs synchronously and may detach the target,
+    // and closest() cannot walk up out of a node that has already been removed from the tree.
+    const pressedElement = getPressedElement(event.target);
+
     event.target.dispatchEvent(shortclickEvent);
 
-    guardAgainstGhostClick(event.target);
+    guardAgainstGhostClick(pressedElement);
+}
+
+/*
+ * A pointer event targets the deepest node under the finger - typically a label <span> inside a <button>,
+ * not the button. Anchor the guard on the element that would actually receive the click's native default
+ * action instead: a handler is free to replace that inner <span> while the <button> itself survives, and
+ * the click that follows is then genuine. Anchoring on the replaced <span> would see it disconnected and
+ * swallow a real click.
+ *
+ * Falls back to the target itself when the press was not on an interactive element (a @onshortclick on a
+ * plain <div> or <tr>, for instance).
+ */
+function getPressedElement(target) {
+    if (typeof target.closest !== 'function') {
+        return target;
+    }
+
+    return target.closest(INTERACTIVE_SELECTOR) ?? target;
 }
 
 /*
@@ -124,12 +152,19 @@ function triggerEvent(event) {
  * `target.isConnected` cannot be checked straight after dispatchEvent - the handler may be async and its
  * render batch may not have been applied yet. The check has to happen when the click actually arrives.
  */
-function guardAgainstGhostClick(target) {
+function guardAgainstGhostClick(pressedElement) {
+    // At most one guard may be armed. Some touch browsers emit no compatibility click at all, so a guard
+    // can outlive its own gesture. If the user taps again inside that window, the stale guard would fire
+    // first on the NEW gesture's genuine click and - seeing its own long-gone pressed element - swallow
+    // it. Retire the previous guard before arming this one.
+    disarmActiveGuard?.();
+
     let disarmTimer;
 
     const disarm = () => {
         clearTimeout(disarmTimer);
         window.removeEventListener('click', swallow, true);
+        disarmActiveGuard = null;
     };
 
     const swallow = (clickEvent) => {
@@ -137,11 +172,11 @@ function guardAgainstGhostClick(target) {
 
         const clickTarget = clickEvent.target;
         const landedOnPressedElement =
-            target === clickTarget ||
-            target.contains(clickTarget) ||
-            clickTarget.contains(target);
+            pressedElement === clickTarget ||
+            pressedElement.contains(clickTarget) ||
+            clickTarget.contains(pressedElement);
 
-        if (target.isConnected && landedOnPressedElement) {
+        if (pressedElement.isConnected && landedOnPressedElement) {
             return;
         }
 
@@ -149,13 +184,13 @@ function guardAgainstGhostClick(target) {
         clickEvent.stopImmediatePropagation();
     };
 
-    // Some touch browsers emit no compatibility click at all. Disarm on a timer so a listener can never
-    // linger and swallow the user's next, unrelated tap.
     disarmTimer = setTimeout(disarm, COMPATIBILITY_CLICK_WINDOW);
 
     // Capture phase: this has to run before the framework's delegated listener and before the browser
     // performs the click's default action.
     window.addEventListener('click', swallow, true);
+
+    disarmActiveGuard = disarm;
 }
 
 // Attach the event listeners for various event types
