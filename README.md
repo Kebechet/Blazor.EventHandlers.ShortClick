@@ -1,5 +1,9 @@
-# Blazor.EventHandlers.ShortClick
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/kebechet)
 
+# Blazor.EventHandlers.ShortClick
+[![NuGet Version](https://img.shields.io/nuget/v/Kebechet.Blazor.EventHandlers.ShortClick)](https://www.nuget.org/packages/Kebechet.Blazor.EventHandlers.ShortClick/)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Kebechet.Blazor.EventHandlers.ShortClick)](https://www.nuget.org/packages/Kebechet.Blazor.EventHandlers.ShortClick/)
+[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/samuel_sidor.svg?style=social&label=Follow%20samuel_sidor)](https://x.com/samuel_sidor)
 
 This package contains `@onshortclick` event handler.
 
