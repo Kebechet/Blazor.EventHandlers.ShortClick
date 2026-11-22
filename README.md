@@ -33,10 +33,27 @@ Since 3.0.0 the library swallows that click, but **only when it did not land on 
 
 Note that `shortclick` never fires for keyboard activation - Enter/Space produce a `click` with no pointer events. If an element must be operable by keyboard, keep a plain `@onclick` on it.
 
+## What counts as a short click
+
+A press is a short click when the same pointer goes down and up within 400ms and moves at most 8 dips in between (Android's long-press timeout and touch slop).
+
+- The 400ms are measured between the two events' own `timeStamp`s, not by when the handlers run. On a busy main thread (a render or a garbage collection in a WebAssembly app) the handlers run late, and a quick tap would otherwise measure as a long press and be dropped.
+- Every pointer is tracked on its own (by `pointerId`), so a second finger neither overwrites nor completes another finger's press.
+- A press that ends in `pointercancel` never raises `shortclick`. That is what the browser sends when the system takes the gesture over, such as a home swipe from Android's gesture bar that starts over your element.
+
+## Tests
+
+`tests/Blazor.EventHandlers.ShortClick.Browser.Tests` drives the shipping `ShortClick.js` in Chromium and WebKit through Playwright:
+
+```
+dotnet test tests/Blazor.EventHandlers.ShortClick.Browser.Tests
+```
+
+The first run downloads the browser builds of the pinned Playwright version.
+
 # TODO
 - minification
 - build and publish pipeline
-- tests
 
 # License
 This repository is licensed with the [MIT](LICENSE.txt) license.

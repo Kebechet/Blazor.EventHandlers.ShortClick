@@ -5,8 +5,12 @@
  * @license MIT
  */
 
-let startTime, endTime;
-let startPos = null;
+// The press in progress for every pointer that is down, keyed by pointerId: a second finger must neither overwrite
+// where the first one started nor complete its press.
+const pressesByPointerId = new Map();
+
+// The mouse and touch events of the fallback below carry no pointerId, so they share this one.
+const FALLBACK_POINTER_ID = -1;
 
 //is same as Android DEFAULT_LONG_PRESS_TIMEOUT
 const LONG_PRESS_TIMEOUT = 400;
@@ -27,28 +31,42 @@ let disarmActiveGuard = null;
 // Get the device pixel ratio
 const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
 
+function getPointerId(e) {
+    return e.pointerId ?? FALLBACK_POINTER_ID;
+}
+
 // Define a function to handle the "down" event
 function handleDown(e) {
-    // Record the time at the start of the event
-    startTime = new Date();
-    startPos = { x: e.screenX, y: e.screenY };
+    // The first pointer of a new gesture is primary, so no other press can still be in progress. Dropping them here
+    // keeps a pointerup that never reached the window (stopped propagating) from leaving a stale press behind.
+    if (e.isPrimary !== false) {
+        pressesByPointerId.clear();
+    }
+
+    // Record the time at the start of the event: its own timeStamp, not the time this handler runs. On a busy main
+    // thread (a render or a GC in a WebAssembly app) the handlers run late, and a quick tap would measure as a long press.
+    pressesByPointerId.set(getPointerId(e), {
+        startTime: e.timeStamp,
+        startPos: { x: e.screenX, y: e.screenY }
+    });
 }
 
 // Define a function to handle the "up" event
 function handleUp(e) {
+    const pointerId = getPointerId(e);
+    const press = pressesByPointerId.get(pointerId);
+
     // If no corresponding down event was recorded, ignore this up event
-    if (startPos === null || startTime === undefined) {
+    if (press === undefined) {
         return;
     }
 
-    // Capture and reset startPos so stale state doesn't carry over to the next event
-    const capturedStartPos = startPos;
-    startPos = null;
+    // Forget the press so stale state doesn't carry over to the next event
+    pressesByPointerId.delete(pointerId);
+    const capturedStartPos = press.startPos;
 
-    // Record the time at the end of the event
-    endTime = new Date();
-    // Calculate the difference between start and end times
-    let timeDiff = endTime - startTime; // in ms
+    // Calculate the difference between start and end times, both taken from the events themselves
+    let timeDiff = e.timeStamp - press.startTime; // in ms
 
     // If the time difference is less than 400 ms, trigger your custom event
     if (timeDiff >= LONG_PRESS_TIMEOUT) {
@@ -66,6 +84,12 @@ function handleUp(e) {
     }
 
     triggerEvent(e);
+}
+
+// A cancelled press never ends in a shortclick: the system took the gesture over (a home swipe from Android's gesture
+// bar, a scroll), and no pointerup follows.
+function handleCancel(e) {
+    pressesByPointerId.delete(getPointerId(e));
 }
 
 // Define the custom event you want to trigger
@@ -207,6 +231,7 @@ if (window.PointerEvent) {
     // If they are, use them
     window.addEventListener('pointerdown', handleDown);
     window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleCancel);
 } else {
     // If they aren't, fall back to mouse and touch events
     window.addEventListener('mousedown', handleDown);
@@ -214,4 +239,5 @@ if (window.PointerEvent) {
 
     window.addEventListener('touchstart', handleDown);
     window.addEventListener('touchend', handleUp);
+    window.addEventListener('touchcancel', handleCancel);
 }
