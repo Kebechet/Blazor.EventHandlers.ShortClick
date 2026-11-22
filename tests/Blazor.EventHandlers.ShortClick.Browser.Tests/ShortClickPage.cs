@@ -112,20 +112,20 @@ internal sealed class ShortClickPage : IAsyncDisposable
             duration.TotalMilliseconds);
     }
 
-    /// <summary>Dispatches a synthetic pointer event on the button's centre, shifted by <paramref name="offsetPixels"/>.</summary>
-    public async Task DispatchPointerEvent(string eventType, int pointerId, int offsetPixels = 0)
+    /// <summary>Dispatches a synthetic pointer event from <paramref name="pointer"/> on the button.</summary>
+    public async Task DispatchPointerEvent(string eventType, SyntheticPointer pointer)
     {
         var (x, y) = await GetButtonCentre();
         await _page.EvaluateAsync(
             """
-            ([eventType, pointerId, x, y]) => {
+            ([eventType, pointerId, pointerType, isPrimary, x, y]) => {
                 const target = document.getElementById('target');
                 target.dispatchEvent(new PointerEvent(eventType, {
-                    bubbles: true, cancelable: true, composed: true, pointerId, pointerType: 'touch', isPrimary: pointerId === 1,
+                    bubbles: true, cancelable: true, composed: true, pointerId, pointerType, isPrimary,
                     clientX: x, clientY: y, screenX: x, screenY: y, button: 0, buttons: eventType === 'pointerdown' ? 1 : 0 }));
             }
             """,
-            new object[] { eventType, pointerId, x + offsetPixels, y });
+            new object[] { eventType, pointer.PointerId, pointer.PointerType, pointer.IsPrimary, x + pointer.OffsetPixels, y });
     }
 
     public async ValueTask DisposeAsync()

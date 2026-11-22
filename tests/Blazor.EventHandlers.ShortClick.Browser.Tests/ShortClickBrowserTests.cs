@@ -8,12 +8,6 @@ public class ShortClickBrowserTests(BrowserFixture browserFixture) : IClassFixtu
     /// <summary>Lets the busy loop start before the finger lifts, so the pointerup waits behind it.</summary>
     private static readonly TimeSpan _busyLoopStartDelay = TimeSpan.FromMilliseconds(50);
 
-    private const int FirstPointerId = 1;
-    private const int SecondPointerId = 2;
-
-    /// <summary>Where the second finger rests: on the button, but far more than 8 dips from the first one.</summary>
-    private const int SecondPointerOffsetPixels = 80;
-
     [Theory]
     [InlineData(BrowserFixture.Chromium)]
     [InlineData(BrowserFixture.WebKit)]
@@ -105,11 +99,11 @@ public class ShortClickBrowserTests(BrowserFixture browserFixture) : IClassFixtu
     {
         // Arrange
         await using var page = await ShortClickPage.Open(browserFixture.GetBrowser(browserName));
-        await page.DispatchPointerEvent("pointerdown", FirstPointerId);
-        await page.DispatchPointerEvent("pointerdown", SecondPointerId, SecondPointerOffsetPixels);
+        await page.DispatchPointerEvent("pointerdown", SyntheticPointer.FirstFinger);
+        await page.DispatchPointerEvent("pointerdown", SyntheticPointer.SecondFinger);
 
         // Act
-        await page.DispatchPointerEvent("pointerup", FirstPointerId);
+        await page.DispatchPointerEvent("pointerup", SyntheticPointer.FirstFinger);
 
         // Assert
         var shortClickCount = await page.GetShortClickCount();
@@ -117,20 +111,66 @@ public class ShortClickBrowserTests(BrowserFixture browserFixture) : IClassFixtu
     }
 
     /// <summary>
-    /// A system gesture that starts over the page (a home swipe from Android's gesture bar) reaches it as pointerdown,
-    /// then pointercancel once the system claims the gesture - never a pointerup.
+    /// Fingers that tap together make one tap. Once every pointer kept its own press, each finger's pointerup passed
+    /// the checks and raised a shortclick of its own.
     /// </summary>
     [Theory]
     [InlineData(BrowserFixture.Chromium)]
     [InlineData(BrowserFixture.WebKit)]
-    public async Task PressThenCancel_OnTheButton_RaisesNoShortClick(string browserName)
+    public async Task TapWithTwoFingersTogether_OnTheButton_RaisesOneShortClick(string browserName)
     {
         // Arrange
         await using var page = await ShortClickPage.Open(browserFixture.GetBrowser(browserName));
-        await page.DispatchPointerEvent("pointerdown", FirstPointerId);
+        await page.DispatchPointerEvent("pointerdown", SyntheticPointer.FirstFinger);
+        await page.DispatchPointerEvent("pointerdown", SyntheticPointer.SecondFinger);
 
         // Act
-        await page.DispatchPointerEvent("pointercancel", FirstPointerId);
+        await page.DispatchPointerEvent("pointerup", SyntheticPointer.FirstFinger);
+        await page.DispatchPointerEvent("pointerup", SyntheticPointer.SecondFinger);
+
+        // Assert
+        var shortClickCount = await page.GetShortClickCount();
+        shortClickCount.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// A mouse or a pen is always the primary pointer, so its pointerdown starts a new gesture of its own kind. It must
+    /// not end a finger's press that is still in progress.
+    /// </summary>
+    [Theory]
+    [InlineData(BrowserFixture.Chromium)]
+    [InlineData(BrowserFixture.WebKit)]
+    public async Task TapWithAFinger_WhileTheMouseIsPressedElsewhere_RaisesShortClick(string browserName)
+    {
+        // Arrange
+        await using var page = await ShortClickPage.Open(browserFixture.GetBrowser(browserName));
+        await page.DispatchPointerEvent("pointerdown", SyntheticPointer.FirstFinger);
+        await page.DispatchPointerEvent("pointerdown", SyntheticPointer.Mouse);
+
+        // Act
+        await page.DispatchPointerEvent("pointerup", SyntheticPointer.FirstFinger);
+
+        // Assert
+        var shortClickCount = await page.GetShortClickCount();
+        shortClickCount.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// A cancelled press is forgotten. Browsers send no pointerup after a pointercancel, so this stages the case a
+    /// remembered press would get wrong: a pointerup that reuses the cancelled pointer's id without a new pointerdown.
+    /// </summary>
+    [Theory]
+    [InlineData(BrowserFixture.Chromium)]
+    [InlineData(BrowserFixture.WebKit)]
+    public async Task PointerUp_AfterItsPressWasCancelled_RaisesNoShortClick(string browserName)
+    {
+        // Arrange
+        await using var page = await ShortClickPage.Open(browserFixture.GetBrowser(browserName));
+        await page.DispatchPointerEvent("pointerdown", SyntheticPointer.FirstFinger);
+        await page.DispatchPointerEvent("pointercancel", SyntheticPointer.FirstFinger);
+
+        // Act
+        await page.DispatchPointerEvent("pointerup", SyntheticPointer.FirstFinger);
 
         // Assert
         var shortClickCount = await page.GetShortClickCount();

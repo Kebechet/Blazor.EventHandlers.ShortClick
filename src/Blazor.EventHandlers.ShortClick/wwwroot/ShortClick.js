@@ -15,7 +15,9 @@ const FALLBACK_POINTER_ID = -1;
 //is same as Android DEFAULT_LONG_PRESS_TIMEOUT
 const LONG_PRESS_TIMEOUT = 400;
 
-//is same as Android TOUCH_SLOP and the unit is in DIPs
+// Taken from Android's TOUCH_SLOP (8dp), but compared against the movement in screenX/screenY divided by
+// devicePixelRatio. screenX/screenY are already CSS pixels, so the press may really move up to 8 × devicePixelRatio
+// CSS pixels: about 21 on a phone at a devicePixelRatio of 2.625, and 8 on a desktop at 1.
 const MOVE_THRESHOLD = 8;
 
 // How long after a shortclick a compatibility click is still considered part of the same gesture.
@@ -35,17 +37,28 @@ function getPointerId(e) {
     return e.pointerId ?? FALLBACK_POINTER_ID;
 }
 
+// Forgets every press of one kind of pointer (touch, mouse or pen). Each kind makes its own gestures: a mouse, which is
+// always primary, must not end a finger's press that is still in progress.
+function forgetPresses(pointerType) {
+    for (const [pointerId, press] of pressesByPointerId) {
+        if (press.pointerType === pointerType) {
+            pressesByPointerId.delete(pointerId);
+        }
+    }
+}
+
 // Define a function to handle the "down" event
 function handleDown(e) {
-    // The first pointer of a new gesture is primary, so no other press can still be in progress. Dropping them here
-    // keeps a pointerup that never reached the window (stopped propagating) from leaving a stale press behind.
+    // The first pointer of a new gesture is primary, so no other press of its kind can still be in progress. Dropping
+    // them here keeps a pointerup that never reached the window (stopped propagating) from leaving a stale press behind.
     if (e.isPrimary !== false) {
-        pressesByPointerId.clear();
+        forgetPresses(e.pointerType);
     }
 
     // Record the time at the start of the event: its own timeStamp, not the time this handler runs. On a busy main
     // thread (a render or a GC in a WebAssembly app) the handlers run late, and a quick tap would measure as a long press.
     pressesByPointerId.set(getPointerId(e), {
+        pointerType: e.pointerType,
         startTime: e.timeStamp,
         startPos: { x: e.screenX, y: e.screenY }
     });
@@ -84,10 +97,13 @@ function handleUp(e) {
     }
 
     triggerEvent(e);
+
+    // One gesture raises at most one shortclick: fingers that tap together make one tap, not one per finger.
+    forgetPresses(press.pointerType);
 }
 
-// A cancelled press never ends in a shortclick: the system took the gesture over (a home swipe from Android's gesture
-// bar, a scroll), and no pointerup follows.
+// A cancelled press is forgotten, so it can never end in a shortclick. The browser sends pointercancel, and no pointerup,
+// when the system takes the gesture over (a home swipe from Android's gesture bar, a scroll).
 function handleCancel(e) {
     pressesByPointerId.delete(getPointerId(e));
 }

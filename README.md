@@ -35,11 +35,14 @@ Note that `shortclick` never fires for keyboard activation - Enter/Space produce
 
 ## What counts as a short click
 
-A press is a short click when the same pointer goes down and up within 400ms and moves at most 8 dips in between (Android's long-press timeout and touch slop).
+A press is a short click when the same pointer goes down and up within 400ms (Android's long-press timeout) and does not move too far in between.
 
+- **How far it may move:** the distance between the `pointerdown` and the `pointerup` in `screenX`/`screenY`, divided by `devicePixelRatio`, rounded, must be at most 8. The constant comes from Android's 8dp touch slop, but `screenX`/`screenY` are already CSS pixels, so the press may really move up to 8 × `devicePixelRatio` CSS pixels: about 21 on a phone at a `devicePixelRatio` of 2.625, and 8 on a desktop at 1.
 - The 400ms are measured between the two events' own `timeStamp`s, not by when the handlers run. On a busy main thread (a render or a garbage collection in a WebAssembly app) the handlers run late, and a quick tap would otherwise measure as a long press and be dropped.
-- Every pointer is tracked on its own (by `pointerId`), so a second finger neither overwrites nor completes another finger's press.
-- A press that ends in `pointercancel` never raises `shortclick`. That is what the browser sends when the system takes the gesture over, such as a home swipe from Android's gesture bar that starts over your element.
+- Every pointer is tracked on its own (by `pointerId`), so a second finger does not overwrite where the first one started.
+- One gesture raises at most one `shortclick`: when several fingers tap together, the first finger that lifts raises it and the others raise nothing.
+- Touch, mouse and pen gestures are tracked apart. A mouse or a pen is always the primary pointer, and pressing it does not end a finger's press that is still in progress.
+- A cancelled press is forgotten. Browsers send `pointercancel` and no `pointerup` when the system takes the gesture over, such as a home swipe from Android's gesture bar that starts over your element.
 
 ## Tests
 
