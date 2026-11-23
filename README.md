@@ -92,10 +92,30 @@ Since 3.0.0 the library swallows that click, but **only when it did not land on 
 
 Note that `shortclick` never fires for keyboard activation - Enter/Space produce a `click` with no pointer events. If an element must be operable by keyboard, keep a plain `@onclick` on it.
 
+## What counts as a short click
+
+A press is a short click when the same pointer goes down and up within 400ms (Android's long-press timeout) and does not move too far in between.
+
+- **How far it may move:** the distance between the `pointerdown` and the `pointerup` in `screenX`/`screenY`, divided by `devicePixelRatio`, rounded, must be at most 8. The constant comes from Android's 8dp touch slop, but `screenX`/`screenY` are already CSS pixels, so the press may really move up to 8 × `devicePixelRatio` CSS pixels: about 21 on a phone at a `devicePixelRatio` of 2.625, and 8 on a desktop at 1.
+- The 400ms are measured between the two events' own `timeStamp`s, not by when the handlers run. On a busy main thread (a render or a garbage collection in a WebAssembly app) the handlers run late, and a quick tap would otherwise measure as a long press and be dropped.
+- Every pointer is tracked on its own (by `pointerId`), so a second finger does not overwrite where the first one started.
+- One gesture raises at most one `shortclick`: when several fingers tap together, the first finger that lifts raises it and the others raise nothing.
+- Touch, mouse and pen gestures are tracked apart. A mouse or a pen is always the primary pointer, and pressing it does not end a finger's press that is still in progress.
+- A cancelled press is forgotten. Browsers send `pointercancel` and no `pointerup` when the system takes the gesture over, such as a home swipe from Android's gesture bar that starts over your element.
+
+## Tests
+
+`tests/Blazor.EventHandlers.ShortClick.Browser.Tests` drives the shipping `ShortClick.js` in Chromium and WebKit through Playwright:
+
+```
+dotnet test tests/Blazor.EventHandlers.ShortClick.Browser.Tests
+```
+
+The first run downloads the browser builds of the pinned Playwright version.
+
 # TODO
 - minification
 - build and publish pipeline
-- tests
 
 # License
 This repository is licensed with the [MIT](LICENSE.txt) license.
