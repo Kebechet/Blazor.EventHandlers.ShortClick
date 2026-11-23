@@ -24,11 +24,25 @@ const INTERACTIVE_SELECTOR = 'a[href], button, input, select, textarea, label, s
 // Only one ghost-click guard may be armed at a time. See guardAgainstGhostClick.
 let disarmActiveGuard = null;
 
+// Click mode is on for a click when the nearest element carrying this attribute, the target included, has it set to
+// CLICK_MODE_VALUE. See filterClick.
+const CLICK_MODE_ATTRIBUTE = 'data-shortclick-mode';
+const CLICK_MODE_VALUE = 'click';
+
+// The <input> types a press activates, as it does a button. Every other type edits a value. See isTextEntryControl.
+const ACTIVATING_INPUT_TYPES = new Set(['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'color']);
+
+// How the last press ended, for click mode: when its "up" event came and whether it raised a shortclick. Null while a
+// press is in progress, so a click is never judged by an earlier press.
+let lastPressEnd = null;
+
 // Get the device pixel ratio
 const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
 
 // Define a function to handle the "down" event
 function handleDown(e) {
+    lastPressEnd = null;
+
     // Record the time at the start of the event
     startTime = new Date();
     startPos = { x: e.screenX, y: e.screenY };
@@ -44,6 +58,7 @@ function handleUp(e) {
     // Capture and reset startPos so stale state doesn't carry over to the next event
     const capturedStartPos = startPos;
     startPos = null;
+    lastPressEnd = { timeStamp: e.timeStamp, isShortClick: false };
 
     // Record the time at the end of the event
     endTime = new Date();
@@ -65,6 +80,7 @@ function handleUp(e) {
         return;
     }
 
+    lastPressEnd.isShortClick = true;
     triggerEvent(e);
 }
 
@@ -200,6 +216,69 @@ function guardAgainstGhostClick(pressedElement) {
 
     disarmActiveGuard = disarm;
 }
+
+/*
+ * Click mode (opt-in): a click that a pointer made reaches the page only when its press was a short click, so a plain
+ * @onclick behaves like @onshortclick. A press that was held past LONG_PRESS_TIMEOUT or moved past MOVE_THRESHOLD loses
+ * its click - and with it the click's default action, so a long-pressed link does not navigate and a held checkbox does
+ * not toggle.
+ *
+ * The handler then runs on `click`, the LAST event of a tap, so unlike a shortclick handler it cannot re-render the DOM
+ * before a compatibility click arrives.
+ *
+ * Blazor listens for `click` on the document, in the bubble phase; this listener is on the window, in the capture phase,
+ * so it runs first and a dropped click never reaches the framework.
+ */
+function filterClick(clickEvent) {
+    // Keyboard activation and element.click() carry detail === 0, and a dispatchEvent() from a script is not trusted.
+    // Neither comes from a press.
+    if (clickEvent.detail === 0 || !clickEvent.isTrusted) {
+        return;
+    }
+
+    const clickTarget = clickEvent.target;
+    if (!isClickModeOn(clickTarget) || isTextEntryControl(clickTarget)) {
+        return;
+    }
+
+    // Only a press measured as NOT short loses its click. A click that follows no measured press (a pointerup stopped
+    // before it reached the window, an assistive technology's activation) keeps the browser's behaviour.
+    const isClickOfLastPress =
+        lastPressEnd !== null &&
+        clickEvent.timeStamp - lastPressEnd.timeStamp <= COMPATIBILITY_CLICK_WINDOW;
+
+    if (!isClickOfLastPress || lastPressEnd.isShortClick) {
+        return;
+    }
+
+    clickEvent.preventDefault();
+    clickEvent.stopImmediatePropagation();
+}
+
+function isClickModeOn(clickTarget) {
+    if (typeof clickTarget.closest !== 'function') {
+        return false;
+    }
+
+    const modeElement = clickTarget.closest(`[${CLICK_MODE_ATTRIBUTE}]`);
+
+    return modeElement?.getAttribute(CLICK_MODE_ATTRIBUTE) === CLICK_MODE_VALUE;
+}
+
+/*
+ * A press in a text field, a <select> or editable content places the caret, selects text or opens the list. Its click
+ * belongs to that editing, not to an activation, so a long press or a drag-select keeps it.
+ */
+function isTextEntryControl(clickTarget) {
+    if (clickTarget.isContentEditable || clickTarget.closest('textarea, select') !== null) {
+        return true;
+    }
+
+    return clickTarget.tagName === 'INPUT' && !ACTIVATING_INPUT_TYPES.has(clickTarget.type);
+}
+
+// Capture phase, registered once: see filterClick. It does nothing until a page turns click mode on.
+window.addEventListener('click', filterClick, true);
 
 // Attach the event listeners for various event types
 // Check if Pointer Events are supported.
