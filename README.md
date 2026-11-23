@@ -17,6 +17,46 @@ or the combination with `@onlongpress`:
 <button @onlongpress="OnLongPress" @onshortclick="OnShortClick">Click or longpress me</button>
 ```
 
+## Click mode (opt-in, since 3.1.0)
+
+Click mode gives a plain `@onclick` the semantics of `@onshortclick`: a click that a pointer made reaches the page only when its press was a short click. You keep writing `@onclick`, and the handler runs on `click`, the last event of a tap.
+
+Turn it on for the whole page with an attribute on `<html>` (or `<body>`):
+
+```html
+<html data-shortclick-mode="click">
+```
+
+- Blazor WebAssembly and .NET MAUI Blazor Hybrid: `wwwroot/index.html`.
+- Blazor Web App (interactive server, WebAssembly or auto, and static SSR): the `<html>` element in `App.razor`.
+
+`ShortClick.js` reads the attribute on every click, so nothing has to run before the first tap and the attribute can be changed at runtime. The nearest element carrying the attribute decides, the clicked element included: put it on one container to turn the mode on there only, or give a subtree any other value to turn it back off, for example around a third-party component that relies on long-press clicks:
+
+```html
+<div data-shortclick-mode="off">...</div>
+```
+
+What it drops - the click and its default action:
+- a press held for 400ms or longer: a long-pressed link does not navigate, a held checkbox does not toggle, a held submit button does not submit
+- a press that moved further than a short click may (see `MOVE_THRESHOLD` in `ShortClick.js`): a drag or a text selection that ends on a card does not activate it
+
+What it never touches:
+- keyboard activation (Enter, Space) and `element.click()` (`detail === 0`), and clicks a script dispatches (`isTrusted === false`). Unlike `@onshortclick`, an `@onclick` element stays operable by keyboard.
+- text-entry controls: `<input>` types that edit a value (text, number, date, range...), `<textarea>`, `<select>` and `contenteditable` content. A long press or a drag there places the caret or selects text, so their clicks are left alone.
+- a click that follows no press the script measured, such as a `pointerup` whose propagation was stopped before it reached `window`, or an assistive technology's activation. Only a press measured as not short loses its click.
+- `@onshortclick`, which keeps working the same with or without the mode.
+
+A handler that runs on `click` cannot be followed by a ghost click (see below): nothing of the tap comes after it.
+
+It is off by default because it changes every click in the page, third-party components included, and on a desktop a user who holds the mouse button down for 400ms or longer no longer clicks at all.
+
+The listener is registered on `window` in the capture phase when `ShortClick.js` loads, so it runs before Blazor's own `click` listener on `document`. A dropped click is stopped with `preventDefault()` and `stopImmediatePropagation()` and never reaches Blazor.
+
+**Measured on devices** (2026-11, one test page injected into a .NET MAUI BlazorWebView):
+- Android 16 WebView (Chrome 157, Samsung Galaxy A53): a press held past Android's own long-press timeout fires no `click` at all, only `contextmenu`, with or without the mode. A press of 450-480ms does fire `click`; click mode drops it. A swipe ends in `pointercancel` and no click.
+- iOS 26.2 WKWebView (iPhone 11): a long press of 800ms **does** fire `click`, so without the mode a long-pressed link navigates and a held checkbox toggles; click mode drops it. A drag fires no click.
+- iOS has historically dispatched `click` only to elements it considers clickable (links, form controls, elements with `cursor: pointer` or a click listener of their own), while Blazor listens on `document`. On iOS 26.2 a tap on a plain `<div>` whose only click listener was on `document` did receive `click`. Older iOS versions were not tested: on those, give a tappable non-interactive element `cursor: pointer` or use a `<button>`.
+
 ## Ghost clicks (behaviour change in 3.0.0)
 
 `shortclick` is dispatched on `pointerup`, which is **before** the browser dispatches the compatibility `click` for the same gesture. A handler is therefore free to re-render the DOM in between, and Blazor applies its render batch synchronously.
