@@ -5,13 +5,19 @@
  * @license MIT
  */
 
-let startTime, endTime;
-let startPos = null;
+// The press in progress for every pointer that is down, keyed by pointerId: a second finger must neither overwrite
+// where the first one started nor complete its press.
+const pressesByPointerId = new Map();
+
+// The mouse and touch events of the fallback below carry no pointerId, so they share this one.
+const FALLBACK_POINTER_ID = -1;
 
 //is same as Android DEFAULT_LONG_PRESS_TIMEOUT
 const LONG_PRESS_TIMEOUT = 400;
 
-//is same as Android TOUCH_SLOP and the unit is in DIPs
+// Taken from Android's TOUCH_SLOP (8dp), but compared against the movement in screenX/screenY divided by
+// devicePixelRatio. screenX/screenY are already CSS pixels, so the press may really move up to 8 × devicePixelRatio
+// CSS pixels: about 21 on a phone at a devicePixelRatio of 2.625, and 8 on a desktop at 1.
 const MOVE_THRESHOLD = 8;
 
 // How long after a shortclick a compatibility click is still considered part of the same gesture.
@@ -27,28 +33,53 @@ let disarmActiveGuard = null;
 // Get the device pixel ratio
 const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
 
+function getPointerId(e) {
+    return e.pointerId ?? FALLBACK_POINTER_ID;
+}
+
+// Forgets every press of one kind of pointer (touch, mouse or pen). Each kind makes its own gestures: a mouse, which is
+// always primary, must not end a finger's press that is still in progress.
+function forgetPresses(pointerType) {
+    for (const [pointerId, press] of pressesByPointerId) {
+        if (press.pointerType === pointerType) {
+            pressesByPointerId.delete(pointerId);
+        }
+    }
+}
+
 // Define a function to handle the "down" event
 function handleDown(e) {
-    // Record the time at the start of the event
-    startTime = new Date();
-    startPos = { x: e.screenX, y: e.screenY };
+    // The first pointer of a new gesture is primary, so no other press of its kind can still be in progress. Dropping
+    // them here keeps a pointerup that never reached the window (stopped propagating) from leaving a stale press behind.
+    if (e.isPrimary !== false) {
+        forgetPresses(e.pointerType);
+    }
+
+    // Record the time at the start of the event: its own timeStamp, not the time this handler runs. On a busy main
+    // thread (a render or a GC in a WebAssembly app) the handlers run late, and a quick tap would measure as a long press.
+    pressesByPointerId.set(getPointerId(e), {
+        pointerType: e.pointerType,
+        startTime: e.timeStamp,
+        startPos: { x: e.screenX, y: e.screenY }
+    });
 }
 
 // Define a function to handle the "up" event
 function handleUp(e) {
+    const pointerId = getPointerId(e);
+    const press = pressesByPointerId.get(pointerId);
+
     // If no corresponding down event was recorded, ignore this up event
-    if (startPos === null || startTime === undefined) {
+    if (press === undefined) {
         return;
     }
 
-    // Capture and reset startPos so stale state doesn't carry over to the next event
-    const capturedStartPos = startPos;
-    startPos = null;
+    // Forget the press so stale state doesn't carry over to the next event
+    pressesByPointerId.delete(pointerId);
+    const capturedStartPos = press.startPos;
 
-    // Record the time at the end of the event
-    endTime = new Date();
-    // Calculate the difference between start and end times
-    let timeDiff = endTime - startTime; // in ms
+    // Calculate the difference between start and end times, both taken from the events themselves
+    let timeDiff = e.timeStamp - press.startTime; // in ms
 
     // If the time difference is less than 400 ms, trigger your custom event
     if (timeDiff >= LONG_PRESS_TIMEOUT) {
@@ -66,6 +97,15 @@ function handleUp(e) {
     }
 
     triggerEvent(e);
+
+    // One gesture raises at most one shortclick: fingers that tap together make one tap, not one per finger.
+    forgetPresses(press.pointerType);
+}
+
+// A cancelled press is forgotten, so it can never end in a shortclick. The browser sends pointercancel, and no pointerup,
+// when the system takes the gesture over (a home swipe from Android's gesture bar, a scroll).
+function handleCancel(e) {
+    pressesByPointerId.delete(getPointerId(e));
 }
 
 // Define the custom event you want to trigger
@@ -207,6 +247,7 @@ if (window.PointerEvent) {
     // If they are, use them
     window.addEventListener('pointerdown', handleDown);
     window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleCancel);
 } else {
     // If they aren't, fall back to mouse and touch events
     window.addEventListener('mousedown', handleDown);
@@ -214,4 +255,5 @@ if (window.PointerEvent) {
 
     window.addEventListener('touchstart', handleDown);
     window.addEventListener('touchend', handleUp);
+    window.addEventListener('touchcancel', handleCancel);
 }

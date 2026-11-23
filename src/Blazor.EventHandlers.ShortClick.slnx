@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="../tests/Blazor.EventHandlers.ShortClick.Browser.Tests/Blazor.EventHandlers.ShortClick.Browser.Tests.csproj" />
+  <Project Path="Blazor.EventHandlers.ShortClick/Blazor.EventHandlers.ShortClick.csproj" />
+</Solution>
