@@ -218,6 +218,30 @@ internal sealed class ClickModePage : IAsyncDisposable
         await PressAndRelease(elementId, holdDuration, movePixels: 0);
     }
 
+    /// <summary>Presses the mouse on the element's centre and keeps it down until <see cref="Release"/>.</summary>
+    public async Task Press(string elementId)
+    {
+        var (x, y) = await GetCentre(elementId);
+        await _page.Mouse.MoveAsync(x, y);
+        await _page.Mouse.DownAsync();
+    }
+
+    public async Task Release()
+    {
+        await _page.Mouse.UpAsync();
+    }
+
+    /// <summary>
+    /// Keeps the page's main thread busy for <paramref name="duration"/>, starting right after this returns, the way a
+    /// render or a garbage collection in a WebAssembly app does. Input that arrives meanwhile waits in the queue.
+    /// </summary>
+    public async Task BlockMainThread(TimeSpan duration)
+    {
+        await _page.EvaluateAsync(
+            "durationMilliseconds => setTimeout(() => { const end = performance.now() + durationMilliseconds; while (performance.now() < end) { } }, 0)",
+            duration.TotalMilliseconds);
+    }
+
     public async Task Drag(string elementId)
     {
         await PressAndRelease(elementId, TimeSpan.Zero, DragDistancePixels);

@@ -162,6 +162,29 @@ public class ClickModeBrowserTests(BrowserFixture browserFixture) : IClassFixtur
         clickCount.ShouldBe(0);
     }
 
+    /// <summary>
+    /// A quick tap whose pointerup waits behind a busy main thread (a WebAssembly render) is still a tap: the press is
+    /// timed by the events' own timestamps, so the plain click must get through too.
+    /// </summary>
+    [Theory]
+    [InlineData(BrowserFixture.Chromium)]
+    [InlineData(BrowserFixture.WebKit)]
+    public async Task Tap_ReleasedWhileTheMainThreadIsBusyWithClickModeOn_Clicks(string browserName)
+    {
+        // Arrange
+        await using var page = await ClickModePage.Open(browserFixture.GetBrowser(browserName));
+        await page.Press(ClickModePage.ButtonId);
+
+        // Act
+        await page.BlockMainThread(TimeSpan.FromMilliseconds(700));
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        await page.Release();
+
+        // Assert
+        var clickCount = await page.GetClickCount(ClickModePage.ButtonId);
+        clickCount.ShouldBe(1);
+    }
+
     /// <summary>The verdict of a long press must not stick to the presses after it.</summary>
     [Theory]
     [InlineData(BrowserFixture.Chromium)]
