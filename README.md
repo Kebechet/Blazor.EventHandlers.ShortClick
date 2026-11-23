@@ -56,7 +56,7 @@ Where it lets clicks through that it should not (it always fails open, never the
 - `ShortClick.js` is added as an `async` script by the package's JS initializer, before Blazor starts, and may finish loading after Blazor's first render. A tap in between is not filtered.
 - In a browser without Pointer Events (iOS 12 and older), the mouse events that follow a touch measure the press again as a short one, so a touch long press keeps its click.
 
-⚠️ **A busy main thread can make a quick tap look like a long press.** This version times a press with `new Date()` when its handlers run, not with the events' own timestamps. When the `pointerup` waits behind a long WebAssembly render or a garbage collection, a 150ms tap during a 300ms render measures as a long press: with click mode on its `@onclick` is dropped, as its `@onshortclick` already is. https://github.com/Kebechet/Blazor.EventHandlers.ShortClick/pull/4 times presses by event timestamps and fixes both.
+A quick tap released while the main thread is busy (a WebAssembly render, a garbage collection) still clicks: the press is timed by its events' own timestamps, see [What counts as a short click](#what-counts-as-a-short-click).
 
 **Measured on devices** (2026-11, one test page injected into a .NET MAUI BlazorWebView):
 - Android 16 WebView (Chrome 157, Samsung Galaxy A53): a press held past Android's own long-press timeout fires no `click` at all, only `contextmenu`, with or without the mode. A press of 450-480ms does fire `click`; click mode drops it. A swipe ends in `pointercancel` and no click.
@@ -94,10 +94,10 @@ Note that `shortclick` never fires for keyboard activation - Enter/Space produce
 
 ## What counts as a short click
 
-A press is a short click when the same pointer goes down and up within 400ms (Android's long-press timeout) and does not move too far in between.
+A press is a short click when the same pointer goes down and up within 400ms (Android's long-press timeout, or the page's own limit, see [How long a press may be held](#how-long-a-press-may-be-held-since-310)) and does not move too far in between. `@onshortclick` and click mode use this one check.
 
 - **How far it may move:** the distance between the `pointerdown` and the `pointerup` in `screenX`/`screenY`, divided by `devicePixelRatio`, rounded, must be at most 8. The constant comes from Android's 8dp touch slop, but `screenX`/`screenY` are already CSS pixels, so the press may really move up to 8 × `devicePixelRatio` CSS pixels: about 21 on a phone at a `devicePixelRatio` of 2.625, and 8 on a desktop at 1.
-- The 400ms are measured between the two events' own `timeStamp`s, not by when the handlers run. On a busy main thread (a render or a garbage collection in a WebAssembly app) the handlers run late, and a quick tap would otherwise measure as a long press and be dropped.
+- The hold is measured between the two events' own `timeStamp`s, not by when the handlers run. On a busy main thread (a render or a garbage collection in a WebAssembly app) the handlers run late, and a quick tap would otherwise measure as a long press and be dropped.
 - Every pointer is tracked on its own (by `pointerId`), so a second finger does not overwrite where the first one started.
 - One gesture raises at most one `shortclick`: when several fingers tap together, the first finger that lifts raises it and the others raise nothing.
 - Touch, mouse and pen gestures are tracked apart. A mouse or a pen is always the primary pointer, and pressing it does not end a finger's press that is still in progress.
