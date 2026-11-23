@@ -30,7 +30,7 @@ Turn it on for the whole page with an attribute on `<html>` (or `<body>`):
 - Blazor WebAssembly and .NET MAUI Blazor Hybrid: `wwwroot/index.html`.
 - Blazor Web App (interactive server, WebAssembly or auto, and static SSR): the `<html>` element in `App.razor`.
 
-`ShortClick.js` reads the attribute on every click, so nothing has to run before the first tap and the attribute can be changed at runtime. The nearest element carrying the attribute decides, the clicked element included: put it on one container to turn the mode on there only, or give a subtree any other value to turn it back off, for example around a third-party component that relies on long-press clicks:
+`ShortClick.js` reads the attribute on every click, so the attribute can be changed at runtime. The value is matched in any case (`Click` works too), as HTML matches its own enumerated attribute values. The nearest element carrying the attribute decides, the clicked element included: put it on one container to turn the mode on there only, or give a subtree any other value to turn it back off, for example around a third-party component that relies on long-press clicks:
 
 ```html
 <div data-shortclick-mode="off">...</div>
@@ -42,8 +42,8 @@ What it drops - the click and its default action:
 
 What it never touches:
 - keyboard activation (Enter, Space) and `element.click()` (`detail === 0`), and clicks a script dispatches (`isTrusted === false`). Unlike `@onshortclick`, an `@onclick` element stays operable by keyboard.
-- text-entry controls: `<input>` types that edit a value (text, number, date, range...), `<textarea>`, `<select>` and `contenteditable` content. A long press or a drag there places the caret or selects text, so their clicks are left alone.
-- a click that follows no press the script measured, such as a `pointerup` whose propagation was stopped before it reached `window`, or an assistive technology's activation. Only a press measured as not short loses its click.
+- text-entry controls: `<input>` types that edit a value (text, number, date, range...), `<textarea>`, `<select>` and `contenteditable` content, also inside a web component's shadow root. A long press or a drag there places the caret or selects text, so their clicks are left alone.
+- a click that follows no press the script measured, such as a press whose `pointerdown` or `pointerup` a component's own script stopped from propagating, or an assistive technology's activation. Only a press measured as not short loses its click, and only a click that arrives within 350ms of that press's `pointerup`.
 - `@onshortclick`, which keeps working the same with or without the mode.
 
 A handler that runs on `click` cannot be followed by a ghost click (see below): nothing of the tap comes after it.
@@ -51,6 +51,12 @@ A handler that runs on `click` cannot be followed by a ghost click (see below): 
 It is off by default because it changes every click in the page, third-party components included, and on a desktop a user who holds the mouse button down for 400ms or longer no longer clicks at all.
 
 The listener is registered on `window` in the capture phase when `ShortClick.js` loads, so it runs before Blazor's own `click` listener on `document`. A dropped click is stopped with `preventDefault()` and `stopImmediatePropagation()` and never reaches Blazor.
+
+Where it lets clicks through that it should not (it always fails open, never the other way):
+- `ShortClick.js` is added as an `async` script by the package's JS initializer, before Blazor starts, and may finish loading after Blazor's first render. A tap in between is not filtered.
+- In a browser without Pointer Events (iOS 12 and older), the mouse events that follow a touch measure the press again as a short one, so a touch long press keeps its click.
+
+⚠️ **A busy main thread can make a quick tap look like a long press.** This version times a press with `new Date()` when its handlers run, not with the events' own timestamps. When the `pointerup` waits behind a long WebAssembly render or a garbage collection, a 150ms tap during a 300ms render measures as a long press: with click mode on its `@onclick` is dropped, as its `@onshortclick` already is. https://github.com/Kebechet/Blazor.EventHandlers.ShortClick/pull/4 times presses by event timestamps and fixes both.
 
 **Measured on devices** (2026-11, one test page injected into a .NET MAUI BlazorWebView):
 - Android 16 WebView (Chrome 157, Samsung Galaxy A53): a press held past Android's own long-press timeout fires no `click` at all, only `contextmenu`, with or without the mode. A press of 450-480ms does fire `click`; click mode drops it. A swipe ends in `pointercancel` and no click.
