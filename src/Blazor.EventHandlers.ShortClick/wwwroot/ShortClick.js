@@ -11,6 +11,9 @@ let startPos = null;
 //is same as Android DEFAULT_LONG_PRESS_TIMEOUT
 const LONG_PRESS_TIMEOUT = 400;
 
+// Overrides LONG_PRESS_TIMEOUT for the presses inside the nearest element carrying it. See getLongPressTimeout.
+const LONG_PRESS_TIMEOUT_ATTRIBUTE = 'data-shortclick-long-press-ms';
+
 //is same as Android TOUCH_SLOP and the unit is in DIPs
 const MOVE_THRESHOLD = 8;
 
@@ -63,8 +66,8 @@ function handleUp(e) {
     // Calculate the difference between start and end times
     let timeDiff = endTime - startTime; // in ms
 
-    // If the time difference is less than 400 ms, trigger your custom event
-    if (timeDiff >= LONG_PRESS_TIMEOUT) {
+    // If the time difference is less than 400 ms (or the page's own limit), trigger your custom event
+    if (timeDiff >= getLongPressTimeout(e.target)) {
         return;
     }
 
@@ -80,6 +83,26 @@ function handleUp(e) {
 
     lastPressEnd.isShortClick = true;
     triggerEvent(e);
+}
+
+/*
+ * How long a press may be held and still be a short click: a press held this long or longer is a long press. The page
+ * can raise it for people who tap slowly - Android's "Touch & hold delay" and iOS's "Hold Duration" accessibility
+ * settings exist for them - with data-shortclick-long-press-ms on <html> or on any element, in milliseconds. The
+ * nearest element carrying it, the pressed element included, decides. A value that is not a positive number falls back
+ * to LONG_PRESS_TIMEOUT.
+ *
+ * shortclick and click mode both take their verdict from handleUp, so they can never disagree on what a short press is.
+ */
+function getLongPressTimeout(target) {
+    const timeoutElement = typeof target?.closest === 'function'
+        ? target.closest(`[${LONG_PRESS_TIMEOUT_ATTRIBUTE}]`)
+        : null;
+    const timeout = Number(timeoutElement?.getAttribute(LONG_PRESS_TIMEOUT_ATTRIBUTE));
+
+    return Number.isFinite(timeout) && timeout > 0
+        ? timeout
+        : LONG_PRESS_TIMEOUT;
 }
 
 // Define the custom event you want to trigger
@@ -217,7 +240,7 @@ function guardAgainstGhostClick(pressedElement) {
 
 /*
  * Click mode (opt-in): a click that a pointer made reaches the page only when its press was a short click, so a plain
- * @onclick behaves like @onshortclick. A press that was held past LONG_PRESS_TIMEOUT or moved past MOVE_THRESHOLD loses
+ * @onclick behaves like @onshortclick. A press that was held past getLongPressTimeout or moved past MOVE_THRESHOLD loses
  * its click - and with it the click's default action, so a long-pressed link does not navigate and a held checkbox does
  * not toggle.
  *

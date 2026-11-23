@@ -26,6 +26,13 @@ internal sealed class ClickModePage : IAsyncDisposable
     public const string ShadowFieldId = "shadow-field";
     public const string ReplacedOnShortClickButtonId = "replaced-on-shortclick";
     public const string ReplacementButtonId = "replacement";
+    public const string PatientButtonId = "patient-button";
+
+    /// <summary>The long-press limit of the container around <see cref="PatientButtonId"/>.</summary>
+    public const string PatientContainerLongPressMilliseconds = "1500";
+
+    /// <summary>Past the default 400ms limit, within <see cref="PatientContainerLongPressMilliseconds"/>.</summary>
+    public static readonly TimeSpan OneSecondHold = TimeSpan.FromSeconds(1);
 
     /// <summary>Where the link points: the page navigates there in place, so the test can read it from the hash.</summary>
     public const string LinkTargetHash = "#navigated";
@@ -54,15 +61,17 @@ internal sealed class ClickModePage : IAsyncDisposable
     /// <param name="clickModeValue">The <c>data-shortclick-mode</c> value on &lt;html&gt;, or null for none.</param>
     /// <param name="hasTouch">Whether the page gets a touchscreen, for <see cref="TouchTap"/>.</param>
     /// <param name="isScriptLoaded">False leaves ShortClick.js out, to prove a test needs it.</param>
+    /// <param name="longPressMilliseconds">The <c>data-shortclick-long-press-ms</c> value on &lt;html&gt;, or null for none.</param>
     public static async Task<ClickModePage> Open(
         IBrowser browser,
         string? clickModeValue = ClickModeValue,
         bool hasTouch = false,
-        bool isScriptLoaded = true)
+        bool isScriptLoaded = true,
+        string? longPressMilliseconds = null)
     {
         var browserContext = await browser.NewContextAsync(new BrowserNewContextOptions { HasTouch = hasTouch });
         var page = await browserContext.NewPageAsync();
-        var pageHtml = GetPageHtml(clickModeValue, isScriptLoaded);
+        var pageHtml = GetPageHtml(clickModeValue, isScriptLoaded, longPressMilliseconds);
         await page.RouteAsync($"{Origin}/**", async route =>
         {
             var isScriptRequest = route.Request.Url.EndsWith(ScriptFileName);
@@ -81,18 +90,21 @@ internal sealed class ClickModePage : IAsyncDisposable
         return new ClickModePage(browserContext, page);
     }
 
-    private static string GetPageHtml(string? clickModeValue, bool isScriptLoaded)
+    private static string GetPageHtml(string? clickModeValue, bool isScriptLoaded, string? longPressMilliseconds)
     {
         var clickModeAttribute = clickModeValue is null
             ? string.Empty
             : $"""data-shortclick-mode="{clickModeValue}" """;
+        var longPressAttribute = longPressMilliseconds is null
+            ? string.Empty
+            : $"""data-shortclick-long-press-ms="{longPressMilliseconds}" """;
         var scriptTag = isScriptLoaded
             ? $"""<script src="/{ScriptFileName}"></script>"""
             : string.Empty;
 
         return $$"""
             <!doctype html>
-            <html {{clickModeAttribute}}>
+            <html {{clickModeAttribute}} {{longPressAttribute}}>
             <head><meta charset="utf-8"></head>
             <body style="margin:0">
             <button id="{{ButtonId}}" style="position:absolute;left:20px;top:20px;width:200px;height:60px">Button</button>
@@ -110,6 +122,9 @@ internal sealed class ClickModePage : IAsyncDisposable
             <shadow-field id="{{ShadowFieldId}}" style="position:absolute;left:300px;top:300px;width:200px;height:40px;display:block"></shadow-field>
             <div data-shortclick-mode="click">
                 <button id="{{ScopedButtonId}}" style="position:absolute;left:300px;top:360px;width:200px;height:60px">Click mode here only</button>
+            </div>
+            <div data-shortclick-long-press-ms="{{PatientContainerLongPressMilliseconds}}">
+                <button id="{{PatientButtonId}}" style="position:absolute;left:300px;top:440px;width:200px;height:60px">Longer hold limit</button>
             </div>
             <script>
                 window.clickCountsById = {};
@@ -196,6 +211,11 @@ internal sealed class ClickModePage : IAsyncDisposable
     public async Task LongPress(string elementId)
     {
         await PressAndRelease(elementId, LongPressDuration, movePixels: 0);
+    }
+
+    public async Task Hold(string elementId, TimeSpan holdDuration)
+    {
+        await PressAndRelease(elementId, holdDuration, movePixels: 0);
     }
 
     public async Task Drag(string elementId)
