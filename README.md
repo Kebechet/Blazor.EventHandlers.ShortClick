@@ -17,6 +17,65 @@ or the combination with `@onlongpress`:
 <button @onlongpress="OnLongPress" @onshortclick="OnShortClick">Click or longpress me</button>
 ```
 
+## Click mode (opt-in, since 3.1.0)
+
+Click mode gives a plain `@onclick` the semantics of `@onshortclick`: a click that a pointer made reaches the page only when its press was a short click. You keep writing `@onclick`, and the handler runs on `click`, the last event of a tap.
+
+Turn it on for the whole page with an attribute on `<html>` (or `<body>`):
+
+```html
+<html data-shortclick-mode="click">
+```
+
+- Blazor WebAssembly and .NET MAUI Blazor Hybrid: `wwwroot/index.html`.
+- Blazor Web App (interactive server, WebAssembly or auto, and static SSR): the `<html>` element in `App.razor`.
+
+`ShortClick.js` reads the attribute on every click, so the attribute can be changed at runtime. The value is matched in any case (`Click` works too), as HTML matches its own enumerated attribute values. The nearest element carrying the attribute decides, the clicked element included: put it on one container to turn the mode on there only, or give a subtree any other value to turn it back off, for example around a third-party component that relies on long-press clicks:
+
+```html
+<div data-shortclick-mode="off">...</div>
+```
+
+What it drops - the click and its default action:
+- a press held for 400ms or longer (or the page's own limit, see [How long a press may be held](#how-long-a-press-may-be-held-since-310)): a long-pressed link does not navigate, a held checkbox does not toggle, a held submit button does not submit
+- a press that moved further than a short click may (see `MOVE_THRESHOLD` in `ShortClick.js`): a drag or a text selection that ends on a card does not activate it
+
+What it never touches:
+- keyboard activation (Enter, Space) and `element.click()` (`detail === 0`), and clicks a script dispatches (`isTrusted === false`). Unlike `@onshortclick`, an `@onclick` element stays operable by keyboard.
+- text-entry controls: `<input>` types that edit a value (text, number, date, range...), `<textarea>`, `<select>` and `contenteditable` content, also inside a web component's shadow root. A long press or a drag there places the caret or selects text, so their clicks are left alone.
+- a click that follows no press the script measured, such as a press whose `pointerdown` or `pointerup` a component's own script stopped from propagating, or an assistive technology's activation. Only a press measured as not short loses its click, and only a click that arrives within 350ms of that press's `pointerup`.
+- `@onshortclick`, which keeps working the same with or without the mode.
+
+A handler that runs on `click` cannot be followed by a ghost click (see below): nothing of the tap comes after it.
+
+It is off by default because it changes every click in the page, third-party components included, and on a desktop a user who holds the mouse button down for 400ms or longer no longer clicks at all.
+
+The listener is registered on `window` in the capture phase when `ShortClick.js` loads, so it runs before Blazor's own `click` listener on `document`. A dropped click is stopped with `preventDefault()` and `stopImmediatePropagation()` and never reaches Blazor.
+
+Where it lets clicks through that it should not (it always fails open, never the other way):
+- `ShortClick.js` is added as an `async` script by the package's JS initializer, before Blazor starts, and may finish loading after Blazor's first render. A tap in between is not filtered.
+- In a browser without Pointer Events (iOS 12 and older), the mouse events that follow a touch measure the press again as a short one, so a touch long press keeps its click.
+
+A quick tap released while the main thread is busy (a WebAssembly render, a garbage collection) still clicks: the press is timed by its events' own timestamps, see [What counts as a short click](#what-counts-as-a-short-click).
+
+**Measured on devices** (2026-11, one test page injected into a .NET MAUI BlazorWebView):
+- Android 16 WebView (Chrome 157, Samsung Galaxy A53): a press held past Android's own long-press timeout fires no `click` at all, only `contextmenu`, with or without the mode. A press of 450-480ms does fire `click`; click mode drops it. A swipe ends in `pointercancel` and no click.
+- iOS 26.2 WKWebView (iPhone 11): a long press of 800ms **does** fire `click`, so without the mode a long-pressed link navigates and a held checkbox toggles; click mode drops it. A drag fires no click.
+- iOS has historically dispatched `click` only to elements it considers clickable (links, form controls, elements with `cursor: pointer` or a click listener of their own), while Blazor listens on `document`. On iOS 26.2 a tap on a plain `<div>` whose only click listener was on `document` did receive `click`. Older iOS versions were not tested: on those, give a tappable non-interactive element `cursor: pointer` or use a `<button>`.
+
+## How long a press may be held (since 3.1.0)
+
+By default a press held for 400ms or longer is a long press, not a short click (Android's long-press timeout). People who tap slowly need longer: Android's "Touch & hold delay" accessibility setting goes up to 1.5s, and iOS has "Hold Duration". Raise the limit with an attribute, in milliseconds:
+
+```html
+<html data-shortclick-long-press-ms="1000">
+```
+
+- It applies to `@onshortclick` and to click mode alike. Both take their verdict from the same measurement, so they never disagree on what a short press is.
+- The nearest element carrying the attribute decides, starting from the element the press ends on: `<html>` sets the page's limit, and a container can set its own.
+- A value that is not a positive number (empty, `0`, negative, text) falls back to 400.
+- It is read on every press, so the app can change it at runtime, for example from a setting in its own UI. The library does not read the operating system's setting.
+
 ## Ghost clicks (behaviour change in 3.0.0)
 
 `shortclick` is dispatched on `pointerup`, which is **before** the browser dispatches the compatibility `click` for the same gesture. A handler is therefore free to re-render the DOM in between, and Blazor applies its render batch synchronously.
@@ -35,10 +94,10 @@ Note that `shortclick` never fires for keyboard activation - Enter/Space produce
 
 ## What counts as a short click
 
-A press is a short click when the same pointer goes down and up within 400ms (Android's long-press timeout) and does not move too far in between.
+A press is a short click when the same pointer goes down and up within 400ms (Android's long-press timeout, or the page's own limit, see [How long a press may be held](#how-long-a-press-may-be-held-since-310)) and does not move too far in between. `@onshortclick` and click mode use this one check.
 
 - **How far it may move:** the distance between the `pointerdown` and the `pointerup` in `screenX`/`screenY`, divided by `devicePixelRatio`, rounded, must be at most 8. The constant comes from Android's 8dp touch slop, but `screenX`/`screenY` are already CSS pixels, so the press may really move up to 8 × `devicePixelRatio` CSS pixels: about 21 on a phone at a `devicePixelRatio` of 2.625, and 8 on a desktop at 1.
-- The 400ms are measured between the two events' own `timeStamp`s, not by when the handlers run. On a busy main thread (a render or a garbage collection in a WebAssembly app) the handlers run late, and a quick tap would otherwise measure as a long press and be dropped.
+- The hold is measured between the two events' own `timeStamp`s, not by when the handlers run. On a busy main thread (a render or a garbage collection in a WebAssembly app) the handlers run late, and a quick tap would otherwise measure as a long press and be dropped.
 - Every pointer is tracked on its own (by `pointerId`), so a second finger does not overwrite where the first one started.
 - One gesture raises at most one `shortclick`: when several fingers tap together, the first finger that lifts raises it and the others raise nothing.
 - Touch, mouse and pen gestures are tracked apart. A mouse or a pen is always the primary pointer, and pressing it does not end a finger's press that is still in progress.

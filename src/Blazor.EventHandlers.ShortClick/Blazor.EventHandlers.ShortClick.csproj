@@ -9,15 +9,15 @@
 	<PropertyGroup Label="NugetProperties">
 		<IsPackable>true</IsPackable>
 		<PackageId>Kebechet.Blazor.EventHandlers.ShortClick</PackageId>
-		<Description>Contains @onshortclick blazor event handler</Description>
+		<Description>Contains @onshortclick blazor event handler, and an opt-in click mode that gives @onclick the same short-click semantics</Description>
 		<RepositoryUrl>https://github.com/Kebechet/Blazor.EventHandlers.ShortClick</RepositoryUrl>
 		<PackageProjectUrl>https://github.com/Kebechet/Blazor.EventHandlers.ShortClick</PackageProjectUrl>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseFile>LICENSE</PackageLicenseFile>
 		<RepositoryType>git</RepositoryType>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-		<Version>3.0.0</Version>
-		<PackageReleaseNotes>BREAKING: the compatibility click that follows a shortclick is now swallowed when it does not land on the element that was pressed ("ghost click") - because the handler removed it, or left it in the DOM but no longer hit-testable (pointer-events: none, covered, moved). Previously that click was delivered to whatever sat under the cursor, silently activating submit buttons and links. Keyboard and programmatic clicks (detail === 0) are never affected.</PackageReleaseNotes>
+		<Version>3.1.0</Version>
+		<PackageReleaseNotes>Added an opt-in click mode: with data-shortclick-mode="click" on &lt;html&gt;, &lt;body&gt; or any element, a click that a pointer made reaches the page only when its press was a short click, so a plain @onclick behaves like @onshortclick. A press held for 400ms or longer, or moved past the threshold, loses its click and the click's default action. Keyboard and programmatic clicks always pass, and text-entry controls are exempt. Off by default; @onshortclick is unchanged. Also added data-shortclick-long-press-ms: how long a press may be held and still be a short click (default 400ms), for @onshortclick and click mode alike, from the nearest element carrying it; a value that is not a positive number falls back to 400. Fixed: a press is timed by its events' own timestamps, so a quick tap released while the main thread is busy (a WebAssembly render) is no longer taken for a long press; every pointer is tracked on its own, one gesture raises at most one shortclick, touch, mouse and pen presses are tracked apart, and a cancelled press is forgotten.</PackageReleaseNotes>
 	</PropertyGroup>
 
 	<ItemGroup>

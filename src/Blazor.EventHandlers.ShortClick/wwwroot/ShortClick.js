@@ -15,6 +15,9 @@ const FALLBACK_POINTER_ID = -1;
 //is same as Android DEFAULT_LONG_PRESS_TIMEOUT
 const LONG_PRESS_TIMEOUT = 400;
 
+// Overrides LONG_PRESS_TIMEOUT for the presses inside the nearest element carrying it. See getLongPressTimeout.
+const LONG_PRESS_TIMEOUT_ATTRIBUTE = 'data-shortclick-long-press-ms';
+
 // Taken from Android's TOUCH_SLOP (8dp), but compared against the movement in screenX/screenY divided by
 // devicePixelRatio. screenX/screenY are already CSS pixels, so the press may really move up to 8 × devicePixelRatio
 // CSS pixels: about 21 on a phone at a devicePixelRatio of 2.625, and 8 on a desktop at 1.
@@ -29,6 +32,18 @@ const INTERACTIVE_SELECTOR = 'a[href], button, input, select, textarea, label, s
 
 // Only one ghost-click guard may be armed at a time. See guardAgainstGhostClick.
 let disarmActiveGuard = null;
+
+// Click mode is on for a click when the nearest element carrying this attribute, the target included, has it set to
+// CLICK_MODE_VALUE, in any case: HTML matches enumerated attribute values that way. See filterClick.
+const CLICK_MODE_ATTRIBUTE = 'data-shortclick-mode';
+const CLICK_MODE_VALUE = 'click';
+
+// The <input> types a press activates, as it does a button. Every other type edits a value. See isTextEntryControl.
+const ACTIVATING_INPUT_TYPES = new Set(['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'color']);
+
+// How the last press ended, for click mode: when its "up" event came and whether it raised a shortclick. Null while a
+// press is in progress, so a click is never judged by an earlier press. See forgetLastPressEnd.
+let lastPressEnd = null;
 
 // Get the device pixel ratio
 const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
@@ -77,12 +92,13 @@ function handleUp(e) {
     // Forget the press so stale state doesn't carry over to the next event
     pressesByPointerId.delete(pointerId);
     const capturedStartPos = press.startPos;
+    lastPressEnd = { timeStamp: e.timeStamp, isShortClick: false };
 
     // Calculate the difference between start and end times, both taken from the events themselves
     let timeDiff = e.timeStamp - press.startTime; // in ms
 
-    // If the time difference is less than 400 ms, trigger your custom event
-    if (timeDiff >= LONG_PRESS_TIMEOUT) {
+    // If the time difference is less than 400 ms (or the page's own limit), trigger your custom event
+    if (timeDiff >= getLongPressTimeout(e.target)) {
         return;
     }
 
@@ -96,6 +112,7 @@ function handleUp(e) {
         return;
     }
 
+    lastPressEnd.isShortClick = true;
     triggerEvent(e);
 
     // One gesture raises at most one shortclick: fingers that tap together make one tap, not one per finger.
@@ -106,6 +123,26 @@ function handleUp(e) {
 // when the system takes the gesture over (a home swipe from Android's gesture bar, a scroll).
 function handleCancel(e) {
     pressesByPointerId.delete(getPointerId(e));
+}
+
+/*
+ * How long a press may be held and still be a short click: a press held this long or longer is a long press. The page
+ * can raise it for people who tap slowly - Android's "Touch & hold delay" and iOS's "Hold Duration" accessibility
+ * settings exist for them - with data-shortclick-long-press-ms on <html> or on any element, in milliseconds. The
+ * nearest element carrying it, the pressed element included, decides. A value that is not a positive number falls back
+ * to LONG_PRESS_TIMEOUT.
+ *
+ * shortclick and click mode both take their verdict from handleUp, so they can never disagree on what a short press is.
+ */
+function getLongPressTimeout(target) {
+    const timeoutElement = typeof target?.closest === 'function'
+        ? target.closest(`[${LONG_PRESS_TIMEOUT_ATTRIBUTE}]`)
+        : null;
+    const timeout = Number(timeoutElement?.getAttribute(LONG_PRESS_TIMEOUT_ATTRIBUTE));
+
+    return Number.isFinite(timeout) && timeout > 0
+        ? timeout
+        : LONG_PRESS_TIMEOUT;
 }
 
 // Define the custom event you want to trigger
@@ -241,18 +278,101 @@ function guardAgainstGhostClick(pressedElement) {
     disarmActiveGuard = disarm;
 }
 
+/*
+ * Click mode (opt-in): a click that a pointer made reaches the page only when its press was a short click, so a plain
+ * @onclick behaves like @onshortclick. A press that was held past getLongPressTimeout or moved past MOVE_THRESHOLD loses
+ * its click - and with it the click's default action, so a long-pressed link does not navigate and a held checkbox does
+ * not toggle.
+ *
+ * The handler then runs on `click`, the LAST event of a tap, so unlike a shortclick handler it cannot re-render the DOM
+ * before a compatibility click arrives.
+ *
+ * Blazor listens for `click` on the document, in the bubble phase; this listener is on the window, in the capture phase,
+ * so it runs first and a dropped click never reaches the framework.
+ */
+function filterClick(clickEvent) {
+    // Keyboard activation and element.click() carry detail === 0, and a dispatchEvent() from a script is not trusted.
+    // Neither comes from a press.
+    if (clickEvent.detail === 0 || !clickEvent.isTrusted) {
+        return;
+    }
+
+    if (!isClickModeOn(clickEvent.target) || isTextEntryControl(getInnermostTarget(clickEvent))) {
+        return;
+    }
+
+    // Only a press measured as NOT short loses its click. A click that follows no measured press (a pointerdown or a
+    // pointerup stopped before it reached the window's bubble phase, an assistive technology's activation) keeps the
+    // browser's behaviour.
+    const isClickOfLastPress =
+        lastPressEnd !== null &&
+        clickEvent.timeStamp - lastPressEnd.timeStamp <= COMPATIBILITY_CLICK_WINDOW;
+
+    if (!isClickOfLastPress || lastPressEnd.isShortClick) {
+        return;
+    }
+
+    clickEvent.preventDefault();
+    clickEvent.stopImmediatePropagation();
+}
+
+function isClickModeOn(clickTarget) {
+    if (typeof clickTarget.closest !== 'function') {
+        return false;
+    }
+
+    const modeElement = clickTarget.closest(`[${CLICK_MODE_ATTRIBUTE}]`);
+
+    return modeElement?.getAttribute(CLICK_MODE_ATTRIBUTE).toLowerCase() === CLICK_MODE_VALUE;
+}
+
+// At the window, a click inside a shadow root targets the shadow host. The first node of its composed path is where it
+// really landed, such as the <input> inside a web component's text field.
+function getInnermostTarget(clickEvent) {
+    const innermostTarget = clickEvent.composedPath()[0];
+
+    return typeof innermostTarget?.closest === 'function'
+        ? innermostTarget
+        : clickEvent.target;
+}
+
+/*
+ * A press in a text field, a <select> or editable content places the caret, selects text or opens the list. Its click
+ * belongs to that editing, not to an activation, so a long press or a drag-select keeps it.
+ */
+function isTextEntryControl(clickTarget) {
+    if (clickTarget.isContentEditable || clickTarget.closest('textarea, select') !== null) {
+        return true;
+    }
+
+    return clickTarget.tagName === 'INPUT' && !ACTIVATING_INPUT_TYPES.has(clickTarget.type);
+}
+
+// A new press makes the last one's verdict stale. This runs in the window's capture phase, ahead of everything else: a
+// component that stops its pointerdown from propagating keeps it from handleDown, and the click of that unmeasured press
+// would otherwise be judged by the press before it.
+function forgetLastPressEnd() {
+    lastPressEnd = null;
+}
+
+// Capture phase, registered once: see filterClick. It does nothing until a page turns click mode on.
+window.addEventListener('click', filterClick, true);
+
 // Attach the event listeners for various event types
 // Check if Pointer Events are supported.
 if (window.PointerEvent) {
     // If they are, use them
+    window.addEventListener('pointerdown', forgetLastPressEnd, true);
     window.addEventListener('pointerdown', handleDown);
     window.addEventListener('pointerup', handleUp);
     window.addEventListener('pointercancel', handleCancel);
 } else {
     // If they aren't, fall back to mouse and touch events
+    window.addEventListener('mousedown', forgetLastPressEnd, true);
     window.addEventListener('mousedown', handleDown);
     window.addEventListener('mouseup', handleUp);
 
+    window.addEventListener('touchstart', forgetLastPressEnd, true);
     window.addEventListener('touchstart', handleDown);
     window.addEventListener('touchend', handleUp);
     window.addEventListener('touchcancel', handleCancel);
