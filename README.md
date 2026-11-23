@@ -37,7 +37,7 @@ Turn it on for the whole page with an attribute on `<html>` (or `<body>`):
 ```
 
 What it drops - the click and its default action:
-- a press held for 400ms or longer: a long-pressed link does not navigate, a held checkbox does not toggle, a held submit button does not submit
+- a press held for 400ms or longer (or the page's own limit, see [How long a press may be held](#how-long-a-press-may-be-held-since-310)): a long-pressed link does not navigate, a held checkbox does not toggle, a held submit button does not submit
 - a press that moved further than a short click may (see `MOVE_THRESHOLD` in `ShortClick.js`): a drag or a text selection that ends on a card does not activate it
 
 What it never touches:
@@ -62,6 +62,19 @@ Where it lets clicks through that it should not (it always fails open, never the
 - Android 16 WebView (Chrome 157, Samsung Galaxy A53): a press held past Android's own long-press timeout fires no `click` at all, only `contextmenu`, with or without the mode. A press of 450-480ms does fire `click`; click mode drops it. A swipe ends in `pointercancel` and no click.
 - iOS 26.2 WKWebView (iPhone 11): a long press of 800ms **does** fire `click`, so without the mode a long-pressed link navigates and a held checkbox toggles; click mode drops it. A drag fires no click.
 - iOS has historically dispatched `click` only to elements it considers clickable (links, form controls, elements with `cursor: pointer` or a click listener of their own), while Blazor listens on `document`. On iOS 26.2 a tap on a plain `<div>` whose only click listener was on `document` did receive `click`. Older iOS versions were not tested: on those, give a tappable non-interactive element `cursor: pointer` or use a `<button>`.
+
+## How long a press may be held (since 3.1.0)
+
+By default a press held for 400ms or longer is a long press, not a short click (Android's long-press timeout). People who tap slowly need longer: Android's "Touch & hold delay" accessibility setting goes up to 1.5s, and iOS has "Hold Duration". Raise the limit with an attribute, in milliseconds:
+
+```html
+<html data-shortclick-long-press-ms="1000">
+```
+
+- It applies to `@onshortclick` and to click mode alike. Both take their verdict from the same measurement, so they never disagree on what a short press is.
+- The nearest element carrying the attribute decides, starting from the element the press ends on: `<html>` sets the page's limit, and a container can set its own.
+- A value that is not a positive number (empty, `0`, negative, text) falls back to 400.
+- It is read on every press, so the app can change it at runtime, for example from a setting in its own UI. The library does not read the operating system's setting.
 
 ## Ghost clicks (behaviour change in 3.0.0)
 
