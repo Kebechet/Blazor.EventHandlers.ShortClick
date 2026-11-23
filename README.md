@@ -56,7 +56,7 @@ The first run downloads the browser builds of the pinned Playwright version.
 
 # TODO
 - minification
-- build and publish pipeline
+- build pipeline that runs the browser tests on pull requests
 
 # License
 This repository is licensed with the [MIT](LICENSE.txt) license.
