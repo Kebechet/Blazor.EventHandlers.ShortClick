@@ -25,7 +25,7 @@ const INTERACTIVE_SELECTOR = 'a[href], button, input, select, textarea, label, s
 let disarmActiveGuard = null;
 
 // Click mode is on for a click when the nearest element carrying this attribute, the target included, has it set to
-// CLICK_MODE_VALUE. See filterClick.
+// CLICK_MODE_VALUE, in any case: HTML matches enumerated attribute values that way. See filterClick.
 const CLICK_MODE_ATTRIBUTE = 'data-shortclick-mode';
 const CLICK_MODE_VALUE = 'click';
 
@@ -33,7 +33,7 @@ const CLICK_MODE_VALUE = 'click';
 const ACTIVATING_INPUT_TYPES = new Set(['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'color']);
 
 // How the last press ended, for click mode: when its "up" event came and whether it raised a shortclick. Null while a
-// press is in progress, so a click is never judged by an earlier press.
+// press is in progress, so a click is never judged by an earlier press. See forgetLastPressEnd.
 let lastPressEnd = null;
 
 // Get the device pixel ratio
@@ -41,8 +41,6 @@ const DEVICE_PIXEL_RATIO = window.devicePixelRatio || 1;
 
 // Define a function to handle the "down" event
 function handleDown(e) {
-    lastPressEnd = null;
-
     // Record the time at the start of the event
     startTime = new Date();
     startPos = { x: e.screenX, y: e.screenY };
@@ -236,13 +234,13 @@ function filterClick(clickEvent) {
         return;
     }
 
-    const clickTarget = clickEvent.target;
-    if (!isClickModeOn(clickTarget) || isTextEntryControl(clickTarget)) {
+    if (!isClickModeOn(clickEvent.target) || isTextEntryControl(getInnermostTarget(clickEvent))) {
         return;
     }
 
-    // Only a press measured as NOT short loses its click. A click that follows no measured press (a pointerup stopped
-    // before it reached the window, an assistive technology's activation) keeps the browser's behaviour.
+    // Only a press measured as NOT short loses its click. A click that follows no measured press (a pointerdown or a
+    // pointerup stopped before it reached the window's bubble phase, an assistive technology's activation) keeps the
+    // browser's behaviour.
     const isClickOfLastPress =
         lastPressEnd !== null &&
         clickEvent.timeStamp - lastPressEnd.timeStamp <= COMPATIBILITY_CLICK_WINDOW;
@@ -262,7 +260,17 @@ function isClickModeOn(clickTarget) {
 
     const modeElement = clickTarget.closest(`[${CLICK_MODE_ATTRIBUTE}]`);
 
-    return modeElement?.getAttribute(CLICK_MODE_ATTRIBUTE) === CLICK_MODE_VALUE;
+    return modeElement?.getAttribute(CLICK_MODE_ATTRIBUTE).toLowerCase() === CLICK_MODE_VALUE;
+}
+
+// At the window, a click inside a shadow root targets the shadow host. The first node of its composed path is where it
+// really landed, such as the <input> inside a web component's text field.
+function getInnermostTarget(clickEvent) {
+    const innermostTarget = clickEvent.composedPath()[0];
+
+    return typeof innermostTarget?.closest === 'function'
+        ? innermostTarget
+        : clickEvent.target;
 }
 
 /*
@@ -277,6 +285,13 @@ function isTextEntryControl(clickTarget) {
     return clickTarget.tagName === 'INPUT' && !ACTIVATING_INPUT_TYPES.has(clickTarget.type);
 }
 
+// A new press makes the last one's verdict stale. This runs in the window's capture phase, ahead of everything else: a
+// component that stops its pointerdown from propagating keeps it from handleDown, and the click of that unmeasured press
+// would otherwise be judged by the press before it.
+function forgetLastPressEnd() {
+    lastPressEnd = null;
+}
+
 // Capture phase, registered once: see filterClick. It does nothing until a page turns click mode on.
 window.addEventListener('click', filterClick, true);
 
@@ -284,13 +299,16 @@ window.addEventListener('click', filterClick, true);
 // Check if Pointer Events are supported.
 if (window.PointerEvent) {
     // If they are, use them
+    window.addEventListener('pointerdown', forgetLastPressEnd, true);
     window.addEventListener('pointerdown', handleDown);
     window.addEventListener('pointerup', handleUp);
 } else {
     // If they aren't, fall back to mouse and touch events
+    window.addEventListener('mousedown', forgetLastPressEnd, true);
     window.addEventListener('mousedown', handleDown);
     window.addEventListener('mouseup', handleUp);
 
+    window.addEventListener('touchstart', forgetLastPressEnd, true);
     window.addEventListener('touchstart', handleDown);
     window.addEventListener('touchend', handleUp);
 }
